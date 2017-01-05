@@ -6,7 +6,7 @@
 	    <meta http-equiv="X-UA-Compatible" content="IE=edge">
 	    <meta name="viewport" content="width=device-width, initial-scale=1">
 	        
-	    <title>Web Bluetooth / Device Info Sample</title>
+	    <title>Droplet Demo</title>
 
 	    <script>
 			/*
@@ -384,7 +384,7 @@
 						connection.write("reset();\n", function() {
 							connection.write("NRF.on('disconnect', function() { reset(); });");
 							// let cmd = "setInterval(function(){Bluetooth.println(Puck.light());},100);\n";
-							let cmd = "Bluetooth.println('Ready......FIGHT!');setInterval(function(){Bluetooth.println(BTN.read());},100);\n";
+							let cmd = "Bluetooth.println('Ready......FIGHT!');setInterval(function(){var btn=BTN.read();var cap=Puck.capSense(D12,D11); if(btn || (cap > 4000)) { LED1.write(1);} else { LED1.write(0);};Bluetooth.println(btn);},100);\n";
 
 							setTimeout(function() {
 								// Now tell it to write data on the current light level to Bluetooth
