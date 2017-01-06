@@ -314,97 +314,112 @@
 			/* END PUCK LIBRARY */
 
 
+
+
 			/* BEGIN DROPLET */
-			function doSomething() {
 
-				// Called when we get a line of data from the puck
-				function puckResponse(v) {
-				  // console.log("Received: " + JSON.stringify(v));
-				  let output = document.getElementById('status');
-				  let state = v;
+			var Droplet = (function() {
+			  if (typeof navigator == "undefined") return; // not running in a web browser
 
-				  //for some reason the entire word isn't being seen a "true" so just looking for "t" and "f" as first char
-				  if(state.indexOf("true") == 0) {
-				  	output.innerHTML = "OMFG LEAKSSS!!!!1!!11!";
-				  } else if(state.indexOf("false") == 0) {
-				  	output.innerHTML = "ALL CLEAR: NO LEAK";
-				  } else {
-				  	console.log(state);
-				  }
-				}
+			  	function puckResponse(data) {
+					// console.log("Received: " + JSON.stringify(v));
+					let output = document.getElementById('status');
+					let state = data;
 
+			  		var leakDetected = function() {
+			  			output.innerHTML = "OMFG LEAKSSS!!!!1!!11!";
+			  		}
 
-	   			// var connection;
-				// if (connection) {
-				// 	connection.close();
-				// 	connection = undefined;
-				// } else {
-				// 	document.getElementById('go').innerHTML="CONNECTING...";
-				// }
+			  		var allClear = function() {
+						output.innerHTML = "ALL CLEAR: NO LEAK";
+			  		}
 
-				console.log("\n\nCONNECTED? " + Puck.isConnected() + "\n\n");
-
-				if(Puck.isConnected()) {
-					console.log("Already connected to Puck! Resetting and closing connection...");
-
-					let cmd = "reset();";
-					Puck.write(cmd, function() {document.getElementById('status').innerHTML="";document.getElementById('go').innerHTML="START";console.log("COMMAND SENT");});
-					if(connection) {
-						Puck.close();
+					//for some reason the entire word isn't being seen a "true" so just looking for "t" and "f" as first char
+					if(state.indexOf("true") == 0) {
+						leakDetected();
+					} else if(state.indexOf("false") == 0) {
+						allClear();
+					} else {
+						console.error("UNEXPECTED RESPONSE FROM PUCK: \"" + state + "\"");
 					}
-					// connected = false;
+		  		}
 
-				} else {
+				function startPuck() {
+					console.log("Starting puck...");
 
-					console.log("Time to connect to puck BLE!");
-					Puck.connect(function(c) {
-						if (!c) {
-						  alert("Couldn't connect!");
-						  return;
+					// console.log("\n\nCONNECTED? " + Puck.isConnected() + "\n\n");
+
+					if(Puck.isConnected()) {
+						console.log("Already connected to Puck! Resetting and closing connection...");
+
+						let cmd = "reset();";
+						Puck.write(cmd, function() {document.getElementById('status').innerHTML="";document.getElementById('go').innerHTML="START";console.log("COMMAND SENT");});
+						if(connection) {
+							Puck.close();
 						}
-						connection = c;
+						// connected = false;
 
-						// set global variable
-						// connected = true;
-						
-						// Handle the data we get back, and call 'puckResponse'
-						// whenever we get a line
-						var buf = "";
-						connection.on("data", function(d) {
-						  buf += d;
-						  var i = buf.indexOf("\n");
-						  while (i>=0) {
-						    puckResponse(buf.substr(0,i));
-						    buf = buf.substr(i+1);
-						    i = buf.indexOf("\n");
-						  }
+					} else {
+
+						console.log("Time to connect to puck BLE!");
+						Puck.connect(function(c) {
+							if (!c) {
+							  alert("Couldn't connect!");
+							  return;
+							}
+							connection = c;
+
+							// set global variable
+							// connected = true;
+							
+							// Handle the data we get back, and call 'puckResponse'
+							// whenever we get a line
+							var buf = "";
+							connection.on("data", function(d) {
+							  buf += d;
+							  var i = buf.indexOf("\n");
+							  while (i>=0) {
+							    puckResponse(buf.substr(0,i));
+							    buf = buf.substr(i+1);
+							    i = buf.indexOf("\n");
+							  }
+							});
+
+							// First, reset Puck.js and wait 1500ms
+							connection.write("reset();\n", function() {
+								connection.write("NRF.on('disconnect', function() { reset(); });");
+								// let cmd = "setInterval(function(){Bluetooth.println(Puck.light());},100);\n";
+								let cmd = "Bluetooth.println('Ready......FIGHT!');setInterval(function(){var notify=false; var btn=BTN.read();var cap=Puck.capSense(D12,D11); if(btn || (cap > 7000)) { LED1.write(1); notify=true; } else { LED1.write(0);};Bluetooth.println(notify);},100);\n";
+
+								setTimeout(function() {
+									connection.write(cmd, function() { document.getElementById('go').className="hidden";console.log("COMMAND SENT");});
+								}, 1500);
+							});
+
 						});
 
-						// First, reset Puck.js and wait 1500ms
-						connection.write("reset();\n", function() {
-							connection.write("NRF.on('disconnect', function() { reset(); });");
-							// let cmd = "setInterval(function(){Bluetooth.println(Puck.light());},100);\n";
-							let cmd = "Bluetooth.println('Ready......FIGHT!');setInterval(function(){var notify=false; var btn=BTN.read();var cap=Puck.capSense(D12,D11); if(btn || (cap > 7000)) { LED1.write(1); notify=true; } else { LED1.write(0);};Bluetooth.println(notify);},100);\n";
-
-							setTimeout(function() {
-								// Now tell it to write data on the current light level to Bluetooth
-								// 10 times a second
-								connection.write(cmd, function() { document.getElementById('go').className="hidden";console.log("COMMAND SENT");});
-							}, 1500);
-						});
-
-					});
-
+					}
 				}
-			}
 
-	    	var init = function() {
-	    		var button = document.getElementById("go");
-	    		button.addEventListener("click", doSomething);
-			}
+		    	var init = function() {
+		    		console.log("Initializing...");
+		    		var button = document.getElementById("go");
+		    		button.addEventListener("click", startPuck);
+				}
 
-			// global connected flag (needs a better solution)
-			// var connected = false;
+				var droplet = {
+					debug: false,
+
+					init: init,
+
+					startPuck: startPuck,
+					
+					puckResponse: puckResponse,
+				}
+
+				return droplet;
+			})();
+
 	    </script>
 
 	    <style>
@@ -420,6 +435,6 @@
 
 		<div id="status">ALL CLEAR: NO LEAK</div>
 
-		<script>init();</script>
+		<script>Droplet.init();</script>
 	</body>
 </html>
