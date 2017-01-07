@@ -358,33 +358,7 @@
 		  		}
 
 		  		function sendSMS() {
-					var msg = "Droplet sensor near the Kitchen Sink has detected water! You will be notified every 15 minutes until it is dry.";
-
-					// var f = document.createElement("form");
-					// f.setAttribute('method',"post");
-					// f.setAttribute('action',"submit.php");
-					// f.setAttribute('id', "notifier")
-
-					// var nodeId = document.createElement("input"); //input element, text
-					// nodeId.setAttribute('type',"hidden");
-					// nodeId.setAttribute('name',"nodeId");
-					// nodeId.setAttribute('value', "2");
-
-					// var status = document.createElement("input"); //input element, text
-					// status.setAttribute('type',"hidden");
-					// status.setAttribute('name',"status");
-					// status.setAttribute('value', "h2o");
-
-					// var msgField = document.createElement("input"); //input element, text
-					// msgField.setAttribute('type',"hidden");
-					// msgField.setAttribute('name',"msg");
-					// msgField.setAttribute('value', encodeURI(msg));
-
-					// f.appendChild(nodeId);
-					// f.appendChild(status);
-					// f.appendChild(msgField);
-
-					//document.getElementsByTagName('body')[0].appendChild(f);
+					var msg = "Droplet sensor near the Kitchen Sink has detected water! You will be notified every 5 minutes until it is dry.";
 					
 					data = {
 						"nodeId": "2",
@@ -392,11 +366,14 @@
 						"msg": msg
 					}
 
-					$.post("http://droplet.works/api/sms", data, function() {
-						console.log("SMS sent!");
-					});
-
-
+					if(!Droplet.smsSending && (Date.now() - Droplet.smsLastSent) > 300000) { //5 minutes
+						Droplet.smsSending = true; // returns to false when GET callback runs
+						$.get("http://droplet.works/api/sms", data, function() {
+							console.log("SMS sent!");
+							Droplet.smsLastSent = Date.now();
+							Droplet.smsSending = false;
+						});
+					}
 		  		}
 
 				function startPuck(callback) {
@@ -469,6 +446,10 @@
 					connected: false,
 
 					connection: null,
+
+					smsSending: false,
+
+					smsLastSent: 0,
 
 					init: init,
 
