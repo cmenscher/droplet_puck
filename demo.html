@@ -8,6 +8,7 @@
 	        
 	    <title>Droplet Demo</title>
 
+	    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
 	    <script>
 			/*
 			--------------------------------------------------------------------
@@ -328,6 +329,7 @@
 
 			  		var leakDetected = function() {
 			  			output.innerHTML = "OMFG LEAKSSS!!!!1!!11!";
+			  			sendSMS();
 			  		}
 
 			  		var allClear = function() {
@@ -335,16 +337,69 @@
 			  		}
 
 					//for some reason the entire word isn't being seen a "true" so just looking for "t" and "f" as first char
-					if(state.indexOf("true") == 0) {
-						leakDetected();
-					} else if(state.indexOf("false") == 0) {
-						allClear();
-					} else {
-						console.error("UNEXPECTED RESPONSE FROM PUCK: \"" + state + "\"");
+					if(Droplet.ready) {
+						if(state.indexOf("$true") == 0) {
+							leakDetected();
+						} else if(state.indexOf("$false") == 0) {
+							allClear();
+						} else if(state.indexOf("$reset") == 0) {
+							Droplet.ready = false;
+						} else {
+							console.error("UNEXPECTED RESPONSE FROM PUCK: \"" + state + "\"");
+						}
 					}
 		  		}
 
-				function startPuck() {
+		  		function resetPuck(resetLED) {
+		  			cmdOn = resetLED + ".write(1);";
+		  			cmdOff ="LED1.write(0);LED2.write(0);LED3.write(0);"; //need to turn off all because if the button is held down too long the "on" LED will remain
+		  			sendCmd = "Bluetooth.println('$reset');"+cmdOn+"setTimeout('"+cmdOff+";reset();', 1000);"
+		  			return sendCmd;
+		  		}
+
+		  		function sendSMS() {
+					var msg = "Droplet sensor near the Kitchen Sink has detected water! You will be notified every 15 minutes until it is dry.";
+
+					// var f = document.createElement("form");
+					// f.setAttribute('method',"post");
+					// f.setAttribute('action',"submit.php");
+					// f.setAttribute('id', "notifier")
+
+					// var nodeId = document.createElement("input"); //input element, text
+					// nodeId.setAttribute('type',"hidden");
+					// nodeId.setAttribute('name',"nodeId");
+					// nodeId.setAttribute('value', "2");
+
+					// var status = document.createElement("input"); //input element, text
+					// status.setAttribute('type',"hidden");
+					// status.setAttribute('name',"status");
+					// status.setAttribute('value', "h2o");
+
+					// var msgField = document.createElement("input"); //input element, text
+					// msgField.setAttribute('type',"hidden");
+					// msgField.setAttribute('name',"msg");
+					// msgField.setAttribute('value', encodeURI(msg));
+
+					// f.appendChild(nodeId);
+					// f.appendChild(status);
+					// f.appendChild(msgField);
+
+					//document.getElementsByTagName('body')[0].appendChild(f);
+					
+					data = {
+						"nodeId": "2",
+						"status": "h2o",
+						"msg": msg
+					}
+
+					$.post("http://droplet.works/api/sms", data, function() {
+						console.log("SMS sent!");
+					});
+
+
+		  		}
+
+				function startPuck(callback) {
 					console.log("Starting puck...");
 
 					// console.log("\n\nCONNECTED? " + Puck.isConnected() + "\n\n");
@@ -368,10 +423,8 @@
 							  return;
 							}
 							connection = c;
+							Droplet.connection = connection;
 
-							// set global variable
-							// connected = true;
-							
 							// Handle the data we get back, and call 'puckResponse'
 							// whenever we get a line
 							var buf = "";
@@ -386,33 +439,42 @@
 							});
 
 							// First, reset Puck.js and wait 1500ms
-							connection.write("reset();\n", function() {
+							connection.write(resetPuck("LED3")+"\n", function() {
 								connection.write("NRF.on('disconnect', function() { reset(); });");
 								// let cmd = "setInterval(function(){Bluetooth.println(Puck.light());},100);\n";
-								let cmd = "Bluetooth.println('Ready......FIGHT!');setInterval(function(){var notify=false; var btn=BTN.read();var cap=Puck.capSense(D12,D11); if(btn || (cap > 7000)) { LED1.write(1); notify=true; } else { LED1.write(0);};Bluetooth.println(notify);},100);\n";
+								let cmd = "var cnt = 0;setInterval(function(){var notify=false; var btn=BTN.read();var cap=Puck.capSense(D12,D11); if(btn) { LED1.write(1); notify=true; cnt++; if(cnt > 25) { cnt=0;LED1.write(0);"+resetPuck('LED3')+"} } else if((cap > 7000)) { LED1.write(1); notify=true; } else { LED1.write(0);};Bluetooth.println('$'+notify);},100);\n";
 
 								setTimeout(function() {
-									connection.write(cmd, function() { document.getElementById('go').className="hidden";console.log("COMMAND SENT");});
+									button = document.getElementById('go');
+									connection.write(cmd, function() { button.innerHTML.className="hidden"; setTimeout("Droplet.ready = true", 1500);});
 								}, 1500);
 							});
 
 						});
-
 					}
 				}
 
 		    	var init = function() {
 		    		console.log("Initializing...");
 		    		var button = document.getElementById("go");
+		    		// button.removeEventListener("click", closePuck);
 		    		button.addEventListener("click", startPuck);
 				}
 
 				var droplet = {
 					debug: false,
 
+					ready: false,
+
+					connected: false,
+
+					connection: null,
+
 					init: init,
 
 					startPuck: startPuck,
+
+					// closePuck: closePuck,
 					
 					puckResponse: puckResponse,
 				}
@@ -435,6 +497,12 @@
 
 		<div id="status">ALL CLEAR: NO LEAK</div>
 
-		<script>Droplet.init();</script>
+		<script>
+	    	$(document).ready(function() {
+				Droplet.init();
+	    	});
+
+		</script>
+
 	</body>
 </html>
