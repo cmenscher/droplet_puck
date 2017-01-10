@@ -5,317 +5,14 @@
 	    <meta charset="utf-8">
 	    <meta http-equiv="X-UA-Compatible" content="IE=edge">
 	    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+	    <link href="css/bootstrap.min.css" rel="stylesheet">
+	    <link rel="stylesheet" href="default.css">
 	        
 	    <title>Droplet Demo</title>
 
-	    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+	    <script src="https://www.puck-js.com/puck.js"></script>
 	    <script>
-			/*
-			--------------------------------------------------------------------
-			Puck.js BLE Interface library
-			                    Copyright 2016 Gordon Williams (gw@pur3.co.uk)
-			--------------------------------------------------------------------
-			This Source Code Form is subject to the terms of the Mozilla Public
-			License, v. 2.0. If a copy of the MPL was not distributed with this
-			file, You can obtain one at http://mozilla.org/MPL/2.0/.
-			--------------------------------------------------------------------
-			This creates a 'Puck' object that can be used from the Web Browser.
-
-			Simple usage:
-
-			Puck.write("LED1.set()\n")
-
-			Execute expression and return the result:
-
-			Puck.eval("BTN.read()", function(d) {
-			  alert(d);
-			});
-
-			Or write and wait for a result - this will return all characters,
-			including echo and linefeed from the REPL so you may want to send
-			`echo(0)` and use `console.log` when doing this.
-
-			Puck.write("1+2\n", function(d) {
-			  alert(d);
-			});
-
-			Or more advanced usage with control of the connection
-			- allows multiple connections
-
-			Puck.connect(function(connection) {
-			  if (!connection) throw "Error!";
-			  connection.on('data', function(d) { ... });
-			  connection.on('close', function() { ... });
-			  connection.write("1+2\n", function() {
-			    connection.close();
-			  });
-			});
-
-			*/
-			var Puck = (function() {
-			  if (typeof navigator == "undefined") return; // not running in a web browser
-
-			  var NORDIC_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-			  var NORDIC_TX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-			  var NORDIC_RX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-			  var CHUNKSIZE = 16;
-
-			  function log(s) {
-			      if (puck.log) puck.log(s);
-			  }
-
-			  function ab2str(buf) {
-			      return String.fromCharCode.apply(null, new Uint8Array(buf));
-			  }
-
-			  function str2ab(str) {
-			      var buf = new ArrayBuffer(str.length);
-			      var bufView = new Uint8Array(buf);
-			      for (var i = 0, strLen = str.length; i < strLen; i++) {
-			          bufView[i] = str.charCodeAt(i);
-			      }
-			      return buf;
-			  }
-
-
-			  function connect(callback) {
-			      if (!navigator.bluetooth) {
-			          window.alert("Web Bluetooth isn't enabled in your browser!");
-			          return;
-			      }
-
-			      var connection = {
-			          on: function(evt, cb) {
-			              this["on" + evt] = cb;
-			          },
-			          emit: function(evt, data) {
-			              if (this["on" + evt]) this["on" + evt](data);
-			          },
-			          isOpen: false,
-			          isOpening: true,
-			          txInProgress: false
-			      };
-			      var btServer = undefined;
-			      var btService;
-			      var connectionDisconnectCallback;
-			      var txCharacteristic;
-			      var rxCharacteristic;
-			      var txDataQueue = [];
-
-			      connection.close = function() {
-			          connection.isOpening = false;
-			          if (connection.isOpen) {
-			              connection.isOpen = false;
-			              connection.emit('close');
-			          } else {
-			              if (callback) callback(null);
-			          }
-			          if (btServer) {
-			              btServer.disconnect();
-			              btServer = undefined;
-			              txCharacteristic = undefined;
-			              rxCharacteristic = undefined;
-			          }
-			      };
-
-			      connection.write = function(data, callback) {
-			          if (data) txDataQueue.push({
-			              data: data,
-			              callback: callback
-			          });
-			          if (connection.isOpen && !connection.txInProgress) writeChunk();
-
-			          function writeChunk() {
-			              var chunk;
-			              if (!txDataQueue.length) return;
-			              var txItem = txDataQueue[0];
-			              if (txItem.data.length <= CHUNKSIZE) {
-			                  chunk = txItem.data;
-			                  txItem.data = undefined;
-			              } else {
-			                  chunk = txItem.data.substr(0, CHUNKSIZE);
-			                  txItem.data = txItem.data.substr(CHUNKSIZE);
-			              }
-			              connection.txInProgress = true;
-			              log("BT> Sending " + JSON.stringify(chunk));
-			              txCharacteristic.writeValue(str2ab(chunk)).then(function() {
-			                  log("BT> Sent");
-			                  if (!txItem.data) {
-			                      txDataQueue.shift(); // remove this element
-			                      if (txItem.callback) txItem.callback();
-			                  }
-			                  connection.txInProgress = false;
-			                  writeChunk();
-			              }).
-			              catch (function(error) {
-			                  log('BT> SEND ERROR: ' + error);
-			                  txDataQueue = [];
-			                  connection.close();
-			              });
-			          }
-			      };
-
-			      navigator.bluetooth.requestDevice({
-			          filters: [{
-			              namePrefix: 'Puck.js'
-			          }, {
-			              namePrefix: 'Espruino'
-			          }, {
-			              services: [NORDIC_SERVICE]
-			          }],
-			          optionalServices: [NORDIC_SERVICE]
-			      }).then(function(device) {
-			          log('BT>  Device Name:       ' + device.name);
-			          log('BT>  Device ID:         ' + device.id);
-			          // Was deprecated: Should use getPrimaryServices for this in future
-			          //log('BT>  Device UUIDs:      ' + device.uuids.join('\n' + ' '.repeat(21)));
-			          device.addEventListener('gattserverdisconnected', function() {
-			              log("BT> Disconnected (gattserverdisconnected)");
-			              connection.close();
-			          });
-			          return device.gatt.connect();
-			      }).then(function(server) {
-			          log("BT> Connected");
-			          btServer = server;
-			          return server.getPrimaryService(NORDIC_SERVICE);
-			      }).then(function(service) {
-			          log("BT> Got service");
-			          btService = service;
-			          return btService.getCharacteristic(NORDIC_RX);
-			      }).then(function(characteristic) {
-			          rxCharacteristic = characteristic;
-			          log("BT> RX characteristic:" + JSON.stringify(rxCharacteristic));
-			          rxCharacteristic.addEventListener('characteristicvaluechanged', function(event) {
-			              var value = event.target.value.buffer; // get arraybuffer
-			              connection.emit('data', ab2str(value));
-			          });
-			          return rxCharacteristic.startNotifications();
-			      }).then(function() {
-			          return btService.getCharacteristic(NORDIC_TX);
-			      }).then(function(characteristic) {
-			          txCharacteristic = characteristic;
-			          log("BT> TX characteristic:" + JSON.stringify(txCharacteristic));
-			      }).then(function() {
-			          connection.txInProgress = false;
-			          connection.isOpen = true;
-			          connection.isOpening = false;
-			          callback(connection);
-			          connection.emit('open');
-			          // if we had any writes queued, do them now
-			          connection.write();
-			      }).
-			      catch (function(error) {
-			          log('BT> ERROR: ' + error);
-			          connection.close();
-			      });
-			      return connection;
-			  };
-
-			  // ----------------------------------------------------------
-			  var connection;
-			  /* convenience function... Write data, call the callback with data:
-			     callbackNewline = false => if no new data received for ~0.5 sec
-			     callbackNewline = true => after a newline */
-			  function write(data, callback, callbackNewline) {
-			      var cbTimeout;
-
-			      function onWritten() {
-			          isWriting = false;
-			          if (callback) {
-			              if (callbackNewline) {
-			                  connection.cb = function(d) {
-			                      var newLineIdx = connection.received.indexOf("\n");
-			                      if (newLineIdx >= 0) {
-			                          var l = connection.received.substr(0, newLineIdx);
-			                          connection.received = connection.received.substr(newLineIdx + 1);
-			                          connection.cb = undefined;
-			                          if (cbTimeout) clearTimeout(cbTimeout);
-			                          cbTimeout = undefined;
-			                          if (callback) callback(l);
-			                      }
-			                  };
-			              }
-			              // wait for any received data if we have a callback...
-			              var waitTime = 10;
-			              var maxTime = waitTime;
-			              cbTimeout = setTimeout(function timeout() {
-			                  cbTimeout = undefined;
-			                  if ((connection.hadData || maxTime == waitTime) && maxTime--) {
-			                      cbTimeout = setTimeout(timeout, 250);
-			                  } else {
-			                      connection.cb = undefined;
-			                      if (callback) callback(connection.received);
-			                      connection.received = "";
-			                  }
-			                  connection.hadData = false;
-			              }, 250);
-			          } else connection.received = "";
-			      }
-
-			      if (connection && (connection.isOpen || connection.isOpening)) {
-			          if (!connection.txInProgress) connection.received = "";
-			          return connection.write(data, onWritten);
-			      }
-
-			      connection = connect(function(puck) {
-			          if (!puck) {
-			              connection = undefined;
-			              if (callback) callback(null);
-			              return;
-			          }
-			          connection.received = "";
-			          connection.on('data', function(d) {
-			              connection.received += d;
-			              connection.hadData = true;
-			              if (connection.cb) connection.cb(d);
-			          });
-			          connection.on('close', function(d) {
-			              connection = undefined;
-			          });
-			      });
-			      connection.write(data, onWritten);
-			  }
-
-			  // ----------------------------------------------------------
-
-			  var puck = {
-			      /// Are we writing debug information?
-			      debug: false,
-			      /// Used internally to write log information - you can replace this with your own function
-			      log: function(s) {
-			          if (this.debug) console.log(s)
-			      },
-			      /** Connect to a new device - this creates a separate
-			   connection to the one `write` and `eval` use. */
-			      connect: connect,
-			      /// Write to Puck.js and call back when the data is written.  Creates a connection if it doesn't exist
-			      write: write,
-			      /// Evaluate an expression and call cb with the result. Creates a connection if it doesn't exist
-			      eval: function(expr, cb) {
-			          write('\x10Bluetooth.println(JSON.stringify(' + expr + '))\n', function(d) {
-			              if (d !== null) cb(JSON.parse(d));
-			              else cb(null);
-			          }, true);
-			      },
-			      /// Did `write` and `eval` manage to create a connection?
-			      isConnected: function() {
-			          return connection !== undefined;
-			      },
-			      /// get the connection used by `write` and `eval`
-			      getConnection: function() {
-			          return connection;
-			      },
-			      /// Close the connection used by `write` and `eval`
-			      close: function() {
-			          if (connection) connection.close();
-			      }
-			  };
-			  return puck;
-			})(); 
-			/* END PUCK LIBRARY */
-
-
-
 
 			/* BEGIN DROPLET */
 
@@ -328,22 +25,29 @@
 					let state = data;
 
 			  		var leakDetected = function() {
-			  			output.innerHTML = "OMFG LEAKSSS!!!!1!!11!";
-			  			sendSMS();
+			  			if(!Droplet.moistureDetectedMode) {
+			  				Droplet.moistureDetectedMode = true;
+				  			$("#leakDetectedModal").modal("show");
+				  			sendSMS();
+				  		}
 			  		}
 
-			  		var allClear = function() {
-						output.innerHTML = "ALL CLEAR: NO LEAK";
+			  		var clearAlarm = function() {
+			  			Droplet.moistureDetectedMode = false;
+			  			$("#leakDetectedModal").modal("hide");
 			  		}
 
 					//for some reason the entire word isn't being seen a "true" so just looking for "t" and "f" as first char
 					if(Droplet.ready) {
-						if(state.indexOf("$true") == 0) {
+						if(state.indexOf("$moisture") === 0) {
 							leakDetected();
-						} else if(state.indexOf("$false") == 0) {
-							allClear();
-						} else if(state.indexOf("$reset") == 0) {
+						} else if(state.indexOf("$clearAlarm") === 0) {
+							clearAlarm();
+						} else if(state.indexOf("$reset") === 0) {
 							Droplet.ready = false;
+							$("#disconnectAlert").removeClass("hidden");
+						} else if(state.indexOf("$false") === 0) {
+							// do nothing
 						} else {
 							console.error("UNEXPECTED RESPONSE FROM PUCK: \"" + state + "\"");
 						}
@@ -353,7 +57,8 @@
 		  		function resetPuck(resetLED) {
 		  			cmdOn = resetLED + ".write(1);";
 		  			cmdOff ="LED1.write(0);LED2.write(0);LED3.write(0);"; //need to turn off all because if the button is held down too long the "on" LED will remain
-		  			sendCmd = "Bluetooth.println('$reset');"+cmdOn+"setTimeout('"+cmdOff+";reset();', 1000);"
+		  			sendCmd = "clearInterval();Bluetooth.println('$reset');"+cmdOn+"setTimeout('"+cmdOff+";reset();', 1000);"
+		  			console.log("PUCK RESET!");
 		  			return sendCmd;
 		  		}
 
@@ -379,63 +84,51 @@
 				function startPuck(callback) {
 					console.log("Starting puck...");
 
-					// console.log("\n\nCONNECTED? " + Puck.isConnected() + "\n\n");
-
-					if(Puck.isConnected()) {
-						console.log("Already connected to Puck! Resetting and closing connection...");
-
-						let cmd = "reset();";
-						Puck.write(cmd, function() {document.getElementById('status').innerHTML="";document.getElementById('go').innerHTML="START";console.log("COMMAND SENT");});
-						if(connection) {
-							Puck.close();
+					Puck.connect(function(c) {
+						if (!c) {
+							$("#dropletNotFoundAlert").removeClass("hidden");
+							$("#disconnectAlert").addClass("hidden");
+							return;
+						} else {
+							$("#go, #dropletNotFoundAlert, #disconnectAlert").addClass("hidden"); 
 						}
-						// connected = false;
 
-					} else {
+						connection = c;
+						Droplet.connection = connection;
 
-						console.log("Time to connect to puck BLE!");
-						Puck.connect(function(c) {
-							if (!c) {
-							  alert("Couldn't connect!");
-							  return;
-							}
-							connection = c;
-							Droplet.connection = connection;
-
-							// Handle the data we get back, and call 'puckResponse'
-							// whenever we get a line
-							var buf = "";
-							connection.on("data", function(d) {
-							  buf += d;
-							  var i = buf.indexOf("\n");
-							  while (i>=0) {
-							    puckResponse(buf.substr(0,i));
-							    buf = buf.substr(i+1);
-							    i = buf.indexOf("\n");
-							  }
-							});
-
-							// First, reset Puck.js and wait 1500ms
-							connection.write(resetPuck("LED3")+"\n", function() {
-								connection.write("NRF.on('disconnect', function() { reset(); });");
-								// let cmd = "setInterval(function(){Bluetooth.println(Puck.light());},100);\n";
-								let cmd = "var cnt = 0;setInterval(function(){var notify=false; var btn=BTN.read();var cap=Puck.capSense(D12,D11); if(btn) { LED1.write(1); notify=true; cnt++; if(cnt > 25) { cnt=0;LED1.write(0);"+resetPuck('LED3')+"} } else if((cap > 7000)) { LED1.write(1); notify=true; } else { LED1.write(0);};Bluetooth.println('$'+notify);},100);\n";
-
-								setTimeout(function() {
-									button = document.getElementById('go');
-									connection.write(cmd, function() { button.innerHTML.className="hidden"; setTimeout("Droplet.ready = true", 1500);});
-								}, 1500);
-							});
-
+						// Handle the data we get back, and call 'puckResponse'
+						// whenever we get a line
+						var buf = "";
+						connection.on("data", function(d) {
+						  buf += d;
+						  var i = buf.indexOf("\n");
+						  while (i>=0) {
+						    puckResponse(buf.substr(0,i));
+						    buf = buf.substr(i+1);
+						    i = buf.indexOf("\n");
+						  }
 						});
-					}
+
+						// First, reset Puck.js and wait 1500ms
+						connection.write(resetPuck("LED2")+"\n", function() {
+							connection.write("NRF.on('disconnect', function() { reset(); });");
+							// let cmd = "setInterval(function(){Bluetooth.println(Puck.light());},100);\n";
+							let cmd = "var cnt = 0;setInterval(function(){var notify='false'; var btn=BTN.read();var cap=Puck.capSense(D12,D11); if(btn) { LED1.write(1); notify='clearAlarm'; cnt++; if(cnt > 25) { cnt=0;LED1.write(0);"+resetPuck('LED3')+"} } else if((cap > 7000)) { LED1.write(1); notify='moisture'; } else { LED1.write(0);};Bluetooth.println('$'+notify);},100);\n";
+
+							setTimeout(function() {
+								connection.write(cmd, function() { setTimeout("Droplet.ready = true", 1500);});
+							}, 1500);
+						});
+
+					});
 				}
 
 		    	var init = function() {
 		    		console.log("Initializing...");
 		    		var button = document.getElementById("go");
-		    		// button.removeEventListener("click", closePuck);
-		    		button.addEventListener("click", startPuck);
+		    		$("#go, #tryAgain, #reconnect").on("click", function() {
+		    			startPuck();
+		    		});
 				}
 
 				var droplet = {
@@ -446,6 +139,8 @@
 					connected: false,
 
 					connection: null,
+
+					moistureDetectedMode: false,
 
 					smsSending: false,
 
@@ -474,20 +169,64 @@
 	</head>
 
 	<body>
-		<div class="demo">
-			<div class="demoPage init"><div>
-				<button id="go">START</button>
+		<nav class="navbar navbar-default">
+		  <div class="container-fluid">
+				<!-- Brand and toggle get grouped for better mobile display -->
+				<div class="navbar-header">
+					<button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+					<span class="sr-only">Toggle navigation</span>
+					<span class="icon-bar"></span>
+					<span class="icon-bar"></span>
+					<span class="icon-bar"></span>
+					</button>
+					<a class="navbar-brand" href="#">Droplet</a>
+				</div>
 
-				<div id="status">ALL CLEAR: NO LEAK</div>
+				<!-- Collect the nav links, forms, and other content for toggling -->
+				<div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+					<ul class="nav navbar-nav">
+					<li class="active"><a href="#">Start Demo <span class="sr-only">(current)</span></a></li>
+					<li><a href="#">Deploy a Droplet</a></li>
+					<li><a href="#">Sample Dashboard</a></li>
+					</ul>
+				</div>
+			</div>
+		</nav>
+
+		<div id="demoApp" class="container container-fluid">
+			<div class="page init"><div>
+				<div id="dropletNotFoundAlert" class="alert alert-danger hidden" role="alert"><strong>Droplet not found!</strong><p>A bluetooth Droplet sensor could not be found. Rest it or check the battery and try again...</p><button type="button" id="reconnect" class="btn btn-danger">Try again</button></div>
+				<div id="disconnectAlert" class="alert alert-danger hidden" role="alert"><strong>Droplet reset!</strong> Awaiting connection...<p><button type="button" id="tryAgain" class="btn btn-danger">Reconnect Droplet</button></p></div>
+				<button type="button" id="go" data-loading-text="Pairing..." class="btn btn-primary" autocomplete="off">Start Demo</button>
 			</div>
 
-			<div class="demoPage deploy">
+			<div class="page deploy hidden">
 			</div>
 
-			<div class="demoPage dashboard"></div>
+			<div class="page dashboard hidden"></div>
+
+			<div id="leakDetectedModal" class="modal fade" tabindex="-1" role="dialog">
+			  <div class="modal-dialog" role="document">
+			    <div class="modal-content">
+			      <div class="modal-header">
+			        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+			        <h4 class="modal-title">Moisture detected!</h4>
+			      </div>
+			      <div class="modal-body alert alert-danger">
+			        <p>Droplet sensor at location <strong>kitchen sink</strong> has detected moisture. An SMS has been sent to your contact list. You will be notified again in 5 minutes if moisture is still detected.</p>
+			      </div>
+			      <div class="modal-footer">
+			        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+			      </div>
+			    </div><!-- /.modal-content -->
+			  </div><!-- /.modal-dialog -->
+			</div><!-- /.modal -->
+
 		</div>
 
 
+	    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+	    <script src="js/bootstrap.min.js"></script>
 		<script>
 	    	$(document).ready(function() {
 				Droplet.init();
