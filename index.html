@@ -73,7 +73,7 @@
 
 					if(!Droplet.smsSending && (Date.now() - Droplet.smsLastSent) > 300000) { //5 minutes
 						Droplet.smsSending = true; // returns to false when GET callback runs
-						$.get("http://droplet.works/api/sms", data, function() {
+						$.get("https://droplet.works/api/sms", data, function() {
 							console.log("SMS sent!");
 							Droplet.smsLastSent = Date.now();
 							Droplet.smsSending = false;
