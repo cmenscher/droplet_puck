@@ -55,6 +55,7 @@
 		  		}
 
 		  		function resetPuck(resetLED) {
+		  			Droplet.smsLastSent = 0;
 		  			cmdOn = resetLED + ".write(1);";
 		  			cmdOff ="LED1.write(0);LED2.write(0);LED3.write(0);"; //need to turn off all because if the button is held down too long the "on" LED will remain
 		  			sendCmd = "clearInterval();Bluetooth.println('$reset');"+cmdOn+"setTimeout('"+cmdOff+";reset();', 1000);"
